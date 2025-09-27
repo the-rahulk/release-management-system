@@ -1,0 +1,64 @@
+Build a full-stack web application for release management with the following features:
+
+User Roles:
+
+Release Manager: creates and manages release plans.
+
+Team Lead: assigned to steps, can reassign to team members.
+
+Point of Contact (POC): executes assigned step, updates status.
+
+Viewer: read-only access to dashboard.
+
+Release Plan (called iPlan) Structure:
+
+Supports three categories of steps: Before Release, Actual Release, Post Release.
+
+Each step has a name, description, assigned team lead, optional primary and backup POCs.
+
+Steps can be scheduled by fixed time (with time zone support), triggered immediately after a previous step, or executed simultaneously with another step.
+
+Scheduling & Timezone:
+
+Use UTC for storing times; UI should display times in the user’s local timezone.
+
+Steps should support dependencies with conditional triggers (after previous or simultaneous).
+
+Notifications:
+
+Automated email notifications on step assignment, step trigger (manual or scheduled), and status changes (Not Started, Started, In Progress, Completed).
+
+Email CC to manager and lead, BCC configurable by manager.
+
+Final automated notification sent upon completion of all steps.
+
+Step Management Workflow:
+
+Managers add steps with assigned leads; leads assign primary and optional backup POCs.
+
+Status transitions: Not Started → Started (automatically on trigger mail sent) → In Progress → Completed (with timestamps logged).
+
+Manual triggering allowed by managers; automated trigger on scheduled time.
+
+Next steps triggered according to their scheduling conditions.
+
+Dashboard:
+
+Real-time updates of step status, current step highlighted.
+
+Filter and view steps by category, assigned team, or status.
+
+Shareable secure read-only dashboard links for stakeholders.
+
+History & Auditing:
+
+Store full release and step status change history with timestamps and user record.
+
+Ability to schedule multiple releases with overlapping times.
+
+Global Settings:
+
+A form to manage default email CC, BCC, and other notification settings, editable anytime and applied globally.
+
+Tech stack: React frontend, Node.js backend (Express or NestJS), PostgreSQL with Prisma ORM, and email integration using SMTP or service like SendGrid.
+
