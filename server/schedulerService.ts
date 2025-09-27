@@ -77,8 +77,12 @@ class SchedulerService {
       // Update step status to started
       const updatedStep = await this.storageInstance.updateStep(step.id, {
         status: 'started',
-        startedAt: new Date(),
       });
+      
+      // Update started timestamp separately
+      await this.storageInstance.updateStep(step.id, {
+        startedAt: new Date(),
+      } as any);
 
       // Log the automated trigger
       await this.storageInstance.addStepHistory({
@@ -148,7 +152,6 @@ class SchedulerService {
         // Remove the job after execution
         this.cronJobs.delete(stepId);
       }, {
-        scheduled: false,
         timezone: step.timezone || 'UTC',
       });
 

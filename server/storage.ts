@@ -135,21 +135,22 @@ export class DatabaseStorage implements IStorage {
 
   // Release Step operations
   async getStepsByReleasePlan(releasePlanId: string): Promise<ReleaseStep[]> {
-    return await db
+    const result = await db
       .select()
       .from(releaseSteps)
       .where(eq(releaseSteps.releasePlanId, releasePlanId))
       .orderBy(asc(releaseSteps.order));
+    return result as ReleaseStep[];
   }
 
   async getStep(id: string): Promise<ReleaseStep | undefined> {
     const [step] = await db.select().from(releaseSteps).where(eq(releaseSteps.id, id));
-    return step;
+    return step as ReleaseStep | undefined;
   }
 
   async createStep(step: InsertReleaseStep): Promise<ReleaseStep> {
     const [newStep] = await db.insert(releaseSteps).values(step).returning();
-    return newStep;
+    return newStep as ReleaseStep;
   }
 
   async updateStep(id: string, step: Partial<InsertReleaseStep>): Promise<ReleaseStep> {
@@ -158,7 +159,7 @@ export class DatabaseStorage implements IStorage {
       .set({ ...step, updatedAt: new Date() })
       .where(eq(releaseSteps.id, id))
       .returning();
-    return updatedStep;
+    return updatedStep as ReleaseStep;
   }
 
   async deleteStep(id: string): Promise<void> {
@@ -166,15 +167,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getStepsByStatus(status: string): Promise<ReleaseStep[]> {
-    return await db.select().from(releaseSteps).where(eq(releaseSteps.status, status));
+    const result = await db.select().from(releaseSteps).where(eq(releaseSteps.status, status));
+    return result as ReleaseStep[];
   }
 
   async getStepsByCategory(category: string): Promise<ReleaseStep[]> {
-    return await db.select().from(releaseSteps).where(eq(releaseSteps.category, category));
+    const result = await db.select().from(releaseSteps).where(eq(releaseSteps.category, category));
+    return result as ReleaseStep[];
   }
 
   async getStepsForScheduling(): Promise<ReleaseStep[]> {
-    return await db
+    const result = await db
       .select()
       .from(releaseSteps)
       .where(
@@ -183,6 +186,7 @@ export class DatabaseStorage implements IStorage {
           eq(releaseSteps.status, "not_started")
         )
       );
+    return result as ReleaseStep[];
   }
 
   // Step History operations

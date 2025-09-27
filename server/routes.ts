@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server, type IncomingMessage } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
@@ -13,7 +13,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 
-interface AuthenticatedRequest extends Express.Request {
+interface AuthenticatedRequest extends Request {
   user?: { claims: { sub: string; email: string } };
 }
 
@@ -35,7 +35,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/auth/user', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -88,7 +88,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/release-plans', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.post('/api/release-plans', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -158,7 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/steps', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.post('/api/steps', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const stepData = insertReleaseStepSchema.parse(req.body);
       const step = await storage.createStep(stepData);
@@ -182,7 +182,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/steps/:id', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.patch('/api/steps/:id', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -257,7 +257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Manual step triggering
-  app.post('/api/steps/:id/trigger', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.post('/api/steps/:id/trigger', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -320,7 +320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Global Settings routes
-  app.get('/api/settings', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.get('/api/settings', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const user = await storage.getUser(req.user?.claims?.sub || "");
       if (!user || user.role !== "release_manager") {
@@ -335,7 +335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/settings', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.post('/api/settings', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -371,7 +371,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/release-plans/:id/share-links', isAuthenticated, async (req: AuthenticatedRequest, res) => {
+  app.post('/api/release-plans/:id/share-links', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {

@@ -70,8 +70,8 @@ export const releaseSteps = pgTable("release_steps", {
   schedulingType: varchar("scheduling_type").notNull().default("manual"), // fixed_time, after_step, simultaneous
   scheduledTime: timestamp("scheduled_time"),
   timezone: varchar("timezone", { length: 50 }).default("UTC"),
-  dependsOnStepId: uuid("depends_on_step_id").references(() => releaseSteps.id),
-  simultaneousWithStepId: uuid("simultaneous_with_step_id").references(() => releaseSteps.id),
+  dependsOnStepId: uuid("depends_on_step_id"),
+  simultaneousWithStepId: uuid("simultaneous_with_step_id"),
   
   // Timestamps
   startedAt: timestamp("started_at"),
