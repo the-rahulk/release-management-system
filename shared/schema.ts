@@ -28,7 +28,8 @@ export const sessions = pgTable(
 // User storage table.
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
+  email: varchar("email").unique().notNull(),
+  password: varchar("password").notNull(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -191,16 +192,38 @@ export const shareableLinksRelations = relations(shareableLinks, ({ one }) => ({
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
+  password: true,
   firstName: true,
   lastName: true,
   profileImageUrl: true,
   role: true,
 });
 
-export const insertReleasePlanSchema = createInsertSchema(releasePlans).omit({
+export const createUserSchema = createInsertSchema(users).pick({
+  email: true,
+  password: true,
+  firstName: true,
+  lastName: true,
+  role: true,
+});
+
+export const loginUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+});
+
+// Input schema that accepts date strings from forms
+export const insertReleasePlanInputSchema = createInsertSchema(releasePlans).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  scheduledDate: z.string().optional(),
+});
+
+// Processing schema that transforms strings to dates for database
+export const insertReleasePlanSchema = insertReleasePlanInputSchema.extend({
+  scheduledDate: z.string().optional().transform((val) => val ? new Date(val) : undefined),
 });
 
 export const insertReleaseStepSchema = createInsertSchema(releaseSteps).omit({
@@ -230,6 +253,7 @@ export const insertShareableLinkSchema = createInsertSchema(shareableLinks).omit
 export type UpsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type ReleasePlan = typeof releasePlans.$inferSelect;
+export type InsertReleasePlanInput = z.infer<typeof insertReleasePlanInputSchema>;
 export type InsertReleasePlan = z.infer<typeof insertReleasePlanSchema>;
 export type ReleaseStep = typeof releaseSteps.$inferSelect;
 export type InsertReleaseStep = z.infer<typeof insertReleaseStepSchema>;

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { ReleaseStep, User, InsertReleaseStep } from "@shared/schema";
@@ -17,11 +18,19 @@ interface StepModalProps {
   step?: ReleaseStep | null;
   releasePlanId: string;
   category?: string;
+  action?: string;
 }
 
-export function StepModal({ isOpen, onClose, step, releasePlanId, category }: StepModalProps) {
+export function StepModal({ isOpen, onClose, step, releasePlanId, category, action = "edit" }: StepModalProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  
+  const userRole = (user as any)?.role;
+  const isTeamLead = userRole === "team_lead";
+  const isReleaseManager = userRole === "release_manager";
+  const isPoc = userRole === "poc";
+  const canUpdateStatus = isReleaseManager || isTeamLead || isPoc;
   
   // Form state
   const [formData, setFormData] = useState({
@@ -37,6 +46,7 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
     dependsOnStepId: "",
     simultaneousWithStepId: "",
     order: 0,
+    status: "not_started",
   });
 
   // Fetch users for team lead and POC assignment
@@ -65,6 +75,7 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
         dependsOnStepId: step.dependsOnStepId || "",
         simultaneousWithStepId: step.simultaneousWithStepId || "",
         order: step.order,
+        status: step.status,
       });
     } else {
       setFormData({
@@ -80,6 +91,7 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
         dependsOnStepId: "",
         simultaneousWithStepId: "",
         order: allSteps.length,
+        status: "not_started",
       });
     }
   }, [step, category, allSteps.length]);
@@ -103,6 +115,7 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
       onClose();
     },
     onError: (error: Error) => {
+      console.error("Step update error:", error);
       toast({
         title: "Error",
         description: error.message || "Failed to save step",
@@ -114,17 +127,63 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const data: Partial<InsertReleaseStep> = {
-      ...formData,
-      releasePlanId,
-      scheduledTime: formData.scheduledTime ? new Date(formData.scheduledTime) : null,
-      dependsOnStepId: formData.dependsOnStepId || null,
-      simultaneousWithStepId: formData.simultaneousWithStepId || null,
-      teamLeadId: formData.teamLeadId || null,
-      primaryPocId: formData.primaryPocId || null,
-      backupPocId: formData.backupPocId || null,
-    };
+    let data: Partial<InsertReleaseStep>;
+    
+    if (step) {
+      // Editing existing step based on action
+      if (action === "update-status") {
+        // Only update status
+        data = {
+          status: formData.status,
+        };
+      } else if (action === "reassign") {
+        // Only update POC assignments
+        data = {};
+        if (formData.primaryPocId !== step.primaryPocId) {
+          data.primaryPocId = formData.primaryPocId || null;
+        }
+        if (formData.backupPocId !== step.backupPocId) {
+          data.backupPocId = formData.backupPocId || null;
+        }
+      } else {
+        // Full edit (action === "edit")
+        data = {
+          name: formData.name,
+          description: formData.description,
+          category: formData.category,
+          teamLeadId: formData.teamLeadId || null,
+          primaryPocId: formData.primaryPocId || null,
+          backupPocId: formData.backupPocId || null,
+          schedulingType: formData.schedulingType,
+          scheduledTime: formData.scheduledTime ? new Date(formData.scheduledTime) : null,
+          timezone: formData.timezone,
+          dependsOnStepId: formData.dependsOnStepId || null,
+          simultaneousWithStepId: formData.simultaneousWithStepId || null,
+          order: formData.order,
+          status: formData.status,
+        };
+      }
+    } else {
+      // Creating new step (only Release Managers can do this)
+      data = {
+        releasePlanId: releasePlanId,
+        name: formData.name,
+        description: formData.description,
+        category: formData.category,
+        teamLeadId: formData.teamLeadId || null,
+        primaryPocId: formData.primaryPocId || null,
+        backupPocId: formData.backupPocId || null,
+        schedulingType: formData.schedulingType,
+        scheduledTime: formData.scheduledTime ? new Date(formData.scheduledTime) : null,
+        timezone: formData.timezone,
+        dependsOnStepId: formData.dependsOnStepId || null,
+        simultaneousWithStepId: formData.simultaneousWithStepId || null,
+        order: formData.order,
+        status: formData.status,
+      };
+    }
 
+    console.log("Submitting step data:", data, "User role:", userRole, "Is step update:", !!step, "Form status:", formData.status, "Step status:", step?.status);
     stepMutation.mutate(data);
   };
 
@@ -140,20 +199,64 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="step-modal">
         <DialogHeader>
-          <DialogTitle>{step ? "Edit Step" : "Create New Step"}</DialogTitle>
+          <DialogTitle>
+            {action === "update-status" ? "Update Step Status" :
+             action === "reassign" ? "Reassign Step to POC" :
+             step ? "Edit Step" : "Create New Step"}
+          </DialogTitle>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="name">Step Name *</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => handleInputChange("name", e.target.value)}
-              required
-              data-testid="input-step-name"
-            />
-          </div>
+          {/* Step Information (Read-only when not full editing) */}
+          {action !== "edit" && step && (
+            <div className="bg-muted p-4 rounded-lg">
+              <h4 className="font-medium text-foreground mb-2">Step Information</h4>
+              <p className="text-sm text-muted-foreground mb-1"><strong>Name:</strong> {step.name}</p>
+              <p className="text-sm text-muted-foreground mb-1"><strong>Description:</strong> {step.description || "No description"}</p>
+              <p className="text-sm text-muted-foreground mb-1"><strong>Category:</strong> {step.category.replace("_", " ").toUpperCase()}</p>
+              <p className="text-sm text-muted-foreground"><strong>Current Status:</strong> 
+                <span className="ml-1 px-2 py-1 bg-primary/20 text-primary rounded text-xs font-medium">
+                  {step.status.replace("_", " ").toUpperCase()}
+                </span>
+              </p>
+            </div>
+          )}
+
+          {/* Status Update Section (only when action is update-status or edit) */}
+          {(action === "update-status" || action === "edit") && canUpdateStatus && step && (
+            <div className="space-y-4">
+              <h4 className="font-medium text-foreground">Update Step Status</h4>
+              <div>
+                <Label htmlFor="status">New Status</Label>
+                <Select value={formData.status || step.status} onValueChange={(value) => handleInputChange("status", value)}>
+                  <SelectTrigger data-testid="select-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_started">Not Started</SelectItem>
+                    <SelectItem value="started">Started</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          
+          {/* Full Step Details (only for edit action or when creating new step) */}
+          {(action === "edit" || !step) && (
+            <>
+              <div>
+                <Label htmlFor="name">Step Name *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => handleInputChange("name", e.target.value)}
+                  required
+                  data-testid="input-step-name"
+                />
+              </div>
           
           <div>
             <Label htmlFor="description">Description</Label>
@@ -192,47 +295,15 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="teamLead">Team Lead</Label>
-              <Select value={formData.teamLeadId} onValueChange={(value) => handleInputChange("teamLeadId", value)}>
-                <SelectTrigger data-testid="select-team-lead">
-                  <SelectValue placeholder="Select team lead" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teamLeads.map(user => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName} ({user.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="primaryPoc">Primary POC</Label>
-              <Select value={formData.primaryPocId} onValueChange={(value) => handleInputChange("primaryPocId", value)}>
-                <SelectTrigger data-testid="select-primary-poc">
-                  <SelectValue placeholder="Select primary POC" />
-                </SelectTrigger>
-                <SelectContent>
-                  {pocs.map(user => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName} ({user.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
+          {/* Team Lead Assignment (Release Managers only) */}
           <div>
-            <Label htmlFor="backupPoc">Backup POC</Label>
-            <Select value={formData.backupPocId} onValueChange={(value) => handleInputChange("backupPocId", value)}>
-              <SelectTrigger data-testid="select-backup-poc">
-                <SelectValue placeholder="Select backup POC" />
+            <Label htmlFor="teamLead">Team Lead</Label>
+            <Select value={formData.teamLeadId} onValueChange={(value) => handleInputChange("teamLeadId", value)}>
+              <SelectTrigger data-testid="select-team-lead">
+                <SelectValue placeholder="Select team lead" />
               </SelectTrigger>
               <SelectContent>
-                {pocs.map(user => (
+                {teamLeads.map(user => (
                   <SelectItem key={user.id} value={user.id}>
                     {user.firstName} {user.lastName} ({user.email})
                   </SelectItem>
@@ -274,6 +345,7 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
                       <SelectItem value="America/New_York">EST</SelectItem>
                       <SelectItem value="America/Los_Angeles">PST</SelectItem>
                       <SelectItem value="Europe/London">GMT</SelectItem>
+                      <SelectItem value="Asia/Kolkata">IST</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -322,6 +394,51 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
               )}
             </RadioGroup>
           </div>
+          </>
+          )}
+
+          {/* POC Assignment Section (only for reassign or edit actions, or when creating new step) */}
+          {(action === "reassign" || action === "edit" || !step) && (
+          <div className="space-y-4 border-t pt-4">
+            <h4 className="font-medium text-foreground">
+              {isTeamLead ? "Assign POCs from your team" : "Team Assignment"}
+            </h4>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="primaryPoc">Primary POC *</Label>
+                <Select value={formData.primaryPocId} onValueChange={(value) => handleInputChange("primaryPocId", value)}>
+                  <SelectTrigger data-testid="select-primary-poc">
+                    <SelectValue placeholder="Select primary POC" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pocs.map(user => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName} ({user.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="backupPoc">Backup POC</Label>
+                <Select value={formData.backupPocId} onValueChange={(value) => handleInputChange("backupPocId", value)}>
+                  <SelectTrigger data-testid="select-backup-poc">
+                    <SelectValue placeholder="Select backup POC" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pocs.map(user => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName} ({user.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          )}
 
           <div className="flex justify-end space-x-3 pt-4 border-t border-border">
             <Button type="button" variant="outline" onClick={onClose} data-testid="button-cancel">
@@ -332,7 +449,10 @@ export function StepModal({ isOpen, onClose, step, releasePlanId, category }: St
               disabled={stepMutation.isPending}
               data-testid="button-save-step"
             >
-              {stepMutation.isPending ? "Saving..." : (step ? "Save Changes" : "Create Step")}
+              {stepMutation.isPending ? "Saving..." : 
+               action === "update-status" ? "Update Status" :
+               action === "reassign" ? "Assign POCs" :
+               step ? "Save Changes" : "Create Step"}
             </Button>
           </div>
         </form>

@@ -25,6 +25,8 @@ import { randomUUID } from "crypto";
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: any): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   getUsersByIds(ids: string[]): Promise<User[]>;
   getUsersByRole(role: string): Promise<User[]>;
@@ -69,6 +71,16 @@ export class DatabaseStorage implements IStorage {
   // User operations
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(userData: any): Promise<User> {
+    const [user] = await db.insert(users).values(userData).returning();
     return user;
   }
 
@@ -124,13 +136,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActiveReleasePlan(): Promise<ReleasePlan | undefined> {
-    const [plan] = await db
+    // First try to get an active release plan
+    const [activePlan] = await db
       .select()
       .from(releasePlans)
       .where(eq(releasePlans.status, "active"))
       .orderBy(desc(releasePlans.createdAt))
       .limit(1);
-    return plan;
+    
+    if (activePlan) {
+      return activePlan;
+    }
+    
+    // If no active plan, get the most recent planning release plan
+    const [planningPlan] = await db
+      .select()
+      .from(releasePlans)
+      .where(eq(releasePlans.status, "planning"))
+      .orderBy(desc(releasePlans.createdAt))
+      .limit(1);
+    
+    return planningPlan;
   }
 
   // Release Step operations
@@ -154,9 +180,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateStep(id: string, step: Partial<InsertReleaseStep>): Promise<ReleaseStep> {
+    // Clean up any undefined or invalid fields
+    const cleanStep = Object.entries(step).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== '') {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+    
+    console.log("Storage updateStep - cleaned data:", cleanStep);
+    
     const [updatedStep] = await db
       .update(releaseSteps)
-      .set({ ...step, updatedAt: new Date() })
+      .set({ ...cleanStep, updatedAt: new Date() })
       .where(eq(releaseSteps.id, id))
       .returning();
     return updatedStep as ReleaseStep;

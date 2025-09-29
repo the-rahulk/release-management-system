@@ -8,7 +8,7 @@ interface StepCardProps {
   step: ReleaseStep;
   users?: User[];
   isHighlighted?: boolean;
-  onEdit?: (step: ReleaseStep) => void;
+  onEdit?: (step: ReleaseStep, action?: string) => void;
   onTrigger?: (stepId: string) => void;
   onViewDetails?: (step: ReleaseStep) => void;
   userRole?: string;
@@ -28,8 +28,10 @@ export function StepCard({
   const teamLead = users.find(u => u.id === step.teamLeadId);
   const primaryPoc = users.find(u => u.id === step.primaryPocId);
   
-  const canTrigger = userRole === "release_manager" || userRole === "team_lead";
-  const canEdit = userRole === "release_manager" || userRole === "team_lead";
+  const canTrigger = userRole === "release_manager";
+  const canEdit = userRole === "release_manager";
+  const canReassign = userRole === "team_lead";
+  const canUpdateStatus = userRole === "release_manager" || userRole === "team_lead" || userRole === "poc";
 
   const formatDateTime = (date: Date | string | null) => {
     if (!date) return null;
@@ -129,12 +131,38 @@ export function StepCard({
             </Button>
           )}
 
+          {canUpdateStatus && step.status !== "completed" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 text-xs"
+              onClick={() => onEdit?.(step, "update-status")}
+              data-testid={`button-update-status-${step.id}`}
+            >
+              <i className="fas fa-tasks mr-1" />
+              <span>Update Status</span>
+            </Button>
+          )}
+
+          {canReassign && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="px-3 text-xs"
+              onClick={() => onEdit?.(step, "reassign")}
+              data-testid={`button-reassign-${step.id}`}
+            >
+              <i className="fas fa-user-plus mr-1" />
+              <span>Reassign</span>
+            </Button>
+          )}
+
           {canEdit && (
             <Button
               variant="ghost"
               size="sm"
               className="px-3 text-xs"
-              onClick={() => onEdit?.(step)}
+              onClick={() => onEdit?.(step, "edit")}
               data-testid={`button-edit-${step.id}`}
             >
               <i className="fas fa-edit" />

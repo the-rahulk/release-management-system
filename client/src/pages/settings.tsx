@@ -9,7 +9,7 @@ export default function Settings() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const { toast } = useToast();
 
-  // Redirect if not authenticated or insufficient permissions
+  // Step 2: Add authentication logic
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       toast({
@@ -23,17 +23,17 @@ export default function Settings() {
       return;
     }
 
-    if (!isLoading && isAuthenticated && user?.role !== "release_manager") {
+    if (!isLoading && isAuthenticated && (user as any)?.role !== "release_manager") {
       toast({
         title: "Access Denied",
         description: "You don't have permission to access settings. Only Release Managers can modify settings.",
         variant: "destructive",
       });
-      // Could redirect to dashboard or show a different view
       return;
     }
-  }, [isAuthenticated, isLoading, user?.role, toast]);
+  }, [isAuthenticated, isLoading, user, toast]);
 
+  // Loading state
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -48,14 +48,15 @@ export default function Settings() {
     );
   }
 
-  if (!isAuthenticated || user?.role !== "release_manager") {
+  // Access denied state
+  if (!isAuthenticated || (user as any)?.role !== "release_manager") {
     return (
       <div className="min-h-screen bg-background">
         <Header />
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center py-12">
-            <i className="fas fa-lock text-4xl text-muted-foreground mb-4" />
-            <h2 className="text-xl font-semibold text-foreground mb-2">Access Restricted</h2>
+            <div className="text-4xl mb-4">🔒</div>
+            <h2 className="text-xl font-semibold mb-2">Access Restricted</h2>
             <p className="text-muted-foreground">
               Only Release Managers have access to global settings.
             </p>
@@ -65,14 +66,15 @@ export default function Settings() {
     );
   }
 
+  // Main settings page
   return (
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="settings-main">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-foreground">Global Settings</h2>
+          <h2 className="text-2xl font-bold">Global Settings</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Configure global notification settings and system preferences
           </p>

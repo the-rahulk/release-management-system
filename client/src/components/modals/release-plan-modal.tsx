@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import type { ReleasePlan, InsertReleasePlan } from "@shared/schema";
+import type { ReleasePlan, InsertReleasePlanInput } from "@shared/schema";
 
 interface ReleasePlanModalProps {
   isOpen: boolean;
@@ -37,7 +37,7 @@ export function ReleasePlanModal({ isOpen, onClose, releasePlan }: ReleasePlanMo
         name: releasePlan.name,
         version: releasePlan.version,
         description: releasePlan.description || "",
-        scheduledDate: releasePlan.scheduledDate ? new Date(releasePlan.scheduledDate).toISOString().slice(0, 16) : "",
+        scheduledDate: releasePlan.scheduledDate ? new Date(releasePlan.scheduledDate).toISOString().slice(0, 10) : "",
         timezone: releasePlan.timezone || "UTC",
         status: releasePlan.status,
       });
@@ -55,7 +55,7 @@ export function ReleasePlanModal({ isOpen, onClose, releasePlan }: ReleasePlanMo
 
   // Create/Update release plan mutation
   const releasePlanMutation = useMutation({
-    mutationFn: async (data: Partial<InsertReleasePlan>) => {
+    mutationFn: async (data: Partial<InsertReleasePlanInput>) => {
       if (releasePlan) {
         return await apiRequest("PATCH", `/api/release-plans/${releasePlan.id}`, data);
       } else {
@@ -83,10 +83,18 @@ export function ReleasePlanModal({ isOpen, onClose, releasePlan }: ReleasePlanMo
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const data: Partial<InsertReleasePlan> = {
-      ...formData,
-      scheduledDate: formData.scheduledDate ? new Date(formData.scheduledDate) : null,
+    const data: Partial<InsertReleasePlanInput> = {
+      name: formData.name,
+      version: formData.version,
+      description: formData.description,
+      timezone: formData.timezone,
+      status: formData.status,
     };
+
+    // Only add scheduledDate if it's provided (schema will transform string to Date)
+    if (formData.scheduledDate) {
+      data.scheduledDate = formData.scheduledDate;
+    }
 
     releasePlanMutation.mutate(data);
   };
@@ -144,7 +152,7 @@ export function ReleasePlanModal({ isOpen, onClose, releasePlan }: ReleasePlanMo
               <Label htmlFor="scheduledDate">Scheduled Date</Label>
               <Input
                 id="scheduledDate"
-                type="datetime-local"
+                type="date"
                 value={formData.scheduledDate}
                 onChange={(e) => handleInputChange("scheduledDate", e.target.value)}
                 data-testid="input-scheduled-date"
@@ -161,6 +169,7 @@ export function ReleasePlanModal({ isOpen, onClose, releasePlan }: ReleasePlanMo
                   <SelectItem value="America/New_York">EST</SelectItem>
                   <SelectItem value="America/Los_Angeles">PST</SelectItem>
                   <SelectItem value="Europe/London">GMT</SelectItem>
+                  <SelectItem value="Asia/Kolkata">IST</SelectItem>
                   <SelectItem value="Asia/Tokyo">JST</SelectItem>
                 </SelectContent>
               </Select>

@@ -29,7 +29,7 @@ export function ReleaseSection({
   onViewStepDetails,
   userRole,
 }: ReleaseSectionProps) {
-  const canAddSteps = userRole === "release_manager" || userRole === "team_lead";
+  const canAddSteps = userRole === "release_manager";
 
   return (
     <div data-testid={`release-section-${title.toLowerCase().replace(/\s+/g, "-")}`}>

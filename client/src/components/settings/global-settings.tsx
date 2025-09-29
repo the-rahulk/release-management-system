@@ -255,7 +255,7 @@ export function GlobalSettings() {
             <div>
               <span className="font-medium text-foreground">Email Service:</span>
               <span className="text-muted-foreground ml-2">
-                {process.env.VITE_EMAIL_PROVIDER || "SendGrid"}
+                {import.meta.env.VITE_EMAIL_PROVIDER || "SendGrid"}
               </span>
             </div>
             <div>

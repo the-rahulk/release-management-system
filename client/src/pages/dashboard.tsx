@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [isReleasePlanModalOpen, setIsReleasePlanModalOpen] = useState(false);
   const [selectedStep, setSelectedStep] = useState<ReleaseStep | null>(null);
   const [stepCategory, setStepCategory] = useState<string>("");
+  const [modalAction, setModalAction] = useState<string>("");
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -152,12 +153,14 @@ export default function Dashboard() {
     }
     setStepCategory(category);
     setSelectedStep(null);
+    setModalAction("edit"); // Set action to "edit" for creating new steps
     setIsStepModalOpen(true);
   };
 
-  const handleEditStep = (step: ReleaseStep) => {
+  const handleEditStep = (step: ReleaseStep, action: string = "edit") => {
     setSelectedStep(step);
     setStepCategory(step.category);
+    setModalAction(action);
     setIsStepModalOpen(true);
   };
 
@@ -289,10 +292,16 @@ export default function Dashboard() {
         {/* Modals */}
         <StepModal
           isOpen={isStepModalOpen}
-          onClose={() => setIsStepModalOpen(false)}
+          onClose={() => {
+            setIsStepModalOpen(false);
+            setSelectedStep(null);
+            setModalAction("");
+            setStepCategory("");
+          }}
           step={selectedStep}
           releasePlanId={activeReleasePlan?.id || ""}
           category={stepCategory}
+          action={modalAction}
         />
 
         <ReleasePlanModal

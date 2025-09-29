@@ -95,10 +95,19 @@ export function Header() {
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => window.location.href = "/api/logout"}
+                onClick={async () => {
+                  try {
+                    await fetch("/api/logout", { method: "POST" });
+                    window.location.reload();
+                  } catch (error) {
+                    console.error("Logout failed:", error);
+                  }
+                }}
                 data-testid="button-logout"
+                className="ml-2"
               >
-                <i className="fas fa-sign-out-alt" />
+                <i className="fas fa-sign-out-alt mr-1" />
+                <span className="hidden sm:inline">Sign Out</span>
               </Button>
             </div>
           </div>

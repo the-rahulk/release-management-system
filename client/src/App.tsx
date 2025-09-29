@@ -5,18 +5,17 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { useEffect } from "react";
-import { isUnauthorizedError } from "@/lib/authUtils";
+import { useEffect, type ReactNode } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 // Pages
-import Landing from "@/pages/landing";
+import { AuthForm } from "@/components/auth/auth-form";
 import Dashboard from "@/pages/dashboard";
 import ReleasePlans from "@/pages/release-plans";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
-function AuthWrapper({ children }: { children: React.ReactNode }) {
+function AuthWrapper({ children }: { readonly children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const { toast } = useToast();
 
@@ -47,7 +46,7 @@ function Router() {
     <Switch>
       {/* Public routes */}
       {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
+        <Route path="/" component={AuthForm} />
       ) : (
         <>
           {/* Protected routes */}

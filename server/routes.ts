@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server, type IncomingMessage } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated } from "./localAuth";
 import { emailService } from "./emailService";
 import { schedulerService } from "./schedulerService";
 import {
@@ -14,7 +14,34 @@ import {
 import { z } from "zod";
 
 interface AuthenticatedRequest extends Request {
-  user?: { claims: { sub: string; email: string } };
+  user?: { id: string; email: string; role: string };
+}
+
+// Helper function to update release plan status based on its steps
+async function updateReleasePlanStatus(releasePlanId: string) {
+  try {
+    const steps = await storage.getStepsByReleasePlan(releasePlanId);
+    if (steps.length === 0) return;
+
+    const stepStatuses = steps.map(step => step.status);
+    const hasStarted = stepStatuses.some(status => 
+      status === 'started' || status === 'in_progress' || status === 'completed'
+    );
+    const allCompleted = stepStatuses.every(status => status === 'completed');
+
+    let newStatus = 'planning';
+    if (allCompleted) {
+      newStatus = 'completed';
+    } else if (hasStarted) {
+      newStatus = 'active';
+    }
+
+    // Update the release plan status
+    await storage.updateReleasePlan(releasePlanId, { status: newStatus as any });
+    console.log(`Release plan ${releasePlanId} status updated to: ${newStatus}`);
+  } catch (error) {
+    console.error('Error updating release plan status:', error);
+  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -34,28 +61,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const userId = req.user?.claims?.sub;
-      if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
+  // Auth routes (handled by localAuth.ts)
+  // The /api/auth/user route is now handled in localAuth.ts
 
   // Release Plan routes
-  app.get('/api/release-plans', isAuthenticated, async (req, res) => {
+  app.get('/api/release-plans', isAuthenticated as any, async (req, res) => {
     try {
       const plans = await storage.getReleasePlans();
       res.json(plans);
@@ -90,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/release-plans', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -160,15 +170,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/steps', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const stepData = insertReleaseStepSchema.parse(req.body);
+      console.log("Step creation - original request body:", req.body);
+      
+      // Check permissions - only release managers can create steps
+      const user = await storage.getUser(req.user?.id || "");
+      if (!user || user.role !== "release_manager") {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      // Handle date conversion for all timestamp fields before validation
+      const requestBody = { ...req.body };
+      const timestampFields = ['scheduledTime', 'startedAt', 'completedAt', 'createdAt', 'updatedAt'];
+      timestampFields.forEach(field => {
+        if (requestBody[field]) {
+          if (typeof requestBody[field] === 'string') {
+            // Convert string to Date, but handle empty strings
+            if (requestBody[field].trim() === '') {
+              requestBody[field] = null;
+            } else {
+              const date = new Date(requestBody[field]);
+              requestBody[field] = isNaN(date.getTime()) ? null : date;
+            }
+          }
+        }
+      });
+
+      console.log("Step creation - data after date conversion:", requestBody);
+      const stepData = insertReleaseStepSchema.parse(requestBody);
       const step = await storage.createStep(stepData);
       
-      // Send assignment notification if team lead is assigned
+      // Send assignment notifications
       if (step.teamLeadId) {
         const teamLead = await storage.getUser(step.teamLeadId);
         if (teamLead?.email) {
-          await emailService.sendStepAssignmentNotification(teamLead.email, step);
+          await emailService.sendStepAssignmentNotification(teamLead.email, step, 'team_lead');
         }
+      }
+
+      // Send POC assignment notifications
+      const pocEmails: string[] = [];
+      if (step.primaryPocId) {
+        const primaryPoc = await storage.getUser(step.primaryPocId);
+        if (primaryPoc?.email) pocEmails.push(primaryPoc.email);
+      }
+      if (step.backupPocId) {
+        const backupPoc = await storage.getUser(step.backupPocId);
+        if (backupPoc?.email) pocEmails.push(backupPoc.email);
+      }
+      
+      if (pocEmails.length > 0) {
+        const creator = await storage.getUser(user.id);
+        const creatorName = creator ? `${creator.firstName} ${creator.lastName}` : 'System';
+        await emailService.sendPocReassignmentNotification(pocEmails, step, creatorName);
       }
       
       broadcast({ type: "step_created", data: step });
@@ -184,9 +237,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch('/api/steps/:id', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(403).json({ message: "User not found" });
       }
 
       const currentStep = await storage.getStep(req.params.id);
@@ -195,6 +253,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updates = req.body;
+      
+      // Check permissions based on what's being updated
+      const isStatusOnlyUpdate = Object.keys(updates).length === 1 && updates.hasOwnProperty('status');
+      const isPocAssignmentOnly = Object.keys(updates).every(key => ['primaryPocId', 'backupPocId'].includes(key));
+      const canUpdateStatus = user.role === "release_manager" || user.role === "team_lead" || user.role === "poc";
+      const canReassignPocs = user.role === "release_manager" || user.role === "team_lead";
+      const canFullEdit = user.role === "release_manager";
+      
+      console.log("Step update permissions check:", {
+        userRole: user.role,
+        updateKeys: Object.keys(updates),
+        isStatusOnlyUpdate,
+        isPocAssignmentOnly,
+        canUpdateStatus,
+        canReassignPocs,
+        canFullEdit
+      });
+      
+      if (isStatusOnlyUpdate && !canUpdateStatus) {
+        return res.status(403).json({ message: "Insufficient permissions to update status" });
+      } else if (isPocAssignmentOnly && !canReassignPocs) {
+        return res.status(403).json({ message: "Insufficient permissions to reassign POCs" });
+      } else if (!isStatusOnlyUpdate && !isPocAssignmentOnly && !canFullEdit) {
+        return res.status(403).json({ message: "Insufficient permissions to edit step details" });
+      }
+      
+      // Handle date conversion for all timestamp fields
+      const timestampFields = ['scheduledTime', 'startedAt', 'completedAt', 'createdAt', 'updatedAt'];
+      timestampFields.forEach(field => {
+        if (updates[field]) {
+          if (typeof updates[field] === 'string') {
+            // Convert string to Date, but handle empty strings
+            if (updates[field].trim() === '') {
+              updates[field] = null;
+            } else {
+              const date = new Date(updates[field]);
+              updates[field] = isNaN(date.getTime()) ? null : date;
+            }
+          }
+        }
+      });
+      
+      console.log("Updates after date conversion:", updates);
+      
       const updatedStep = await storage.updateStep(req.params.id, updates);
 
       // Log status change if status was updated
@@ -203,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           stepId: req.params.id,
           previousStatus: currentStep.status,
           newStatus: updates.status,
-          changedBy: userId,
+          changedBy: user.id,
           notes: updates.notes || null,
         });
 
@@ -214,25 +316,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
           currentStep.backupPocId,
         ].filter(Boolean);
 
+        const stakeholderEmails: string[] = [];
         for (const stakeholderId of stakeholders) {
           if (stakeholderId) {
             const stakeholder = await storage.getUser(stakeholderId);
             if (stakeholder?.email) {
-              await emailService.sendStatusChangeNotification(
-                stakeholder.email,
-                updatedStep,
-                currentStep.status,
-                updates.status
-              );
+              stakeholderEmails.push(stakeholder.email);
             }
           }
         }
 
+        if (stakeholderEmails.length > 0) {
+          const updater = await storage.getUser(user.id);
+          const updaterName = updater ? `${updater.firstName} ${updater.lastName}` : 'System';
+          await emailService.sendStatusChangeNotification(
+            stakeholderEmails,
+            updatedStep,
+            currentStep.status,
+            updates.status,
+            updaterName
+          );
+        }
+
         // Update timestamps based on status
         if (updates.status === "started" && !updatedStep.startedAt) {
-          await storage.updateStep(req.params.id, { startedAt: new Date() });
+          await storage.updateStep(req.params.id, { startedAt: new Date() } as any);
         } else if (updates.status === "completed" && !updatedStep.completedAt) {
-          await storage.updateStep(req.params.id, { completedAt: new Date() });
+          await storage.updateStep(req.params.id, { completedAt: new Date() } as any);
+        }
+
+        // Update release plan status based on steps
+        if (updatedStep.releasePlanId) {
+          await updateReleasePlanStatus(updatedStep.releasePlanId);
+          await emailService.checkAndNotifyReleaseCompletion(updatedStep.releasePlanId);
+        }
+      }
+
+      // Send POC assignment notifications if POCs were assigned/reassigned
+      if (updates.primaryPocId || updates.backupPocId) {
+        const pocEmails: string[] = [];
+        const assignedBy = `${user.firstName} ${user.lastName}`;
+        
+        // Notify newly assigned primary POC
+        if (updates.primaryPocId && updates.primaryPocId !== currentStep.primaryPocId) {
+          const primaryPoc = await storage.getUser(updates.primaryPocId);
+          if (primaryPoc?.email) {
+            pocEmails.push(primaryPoc.email);
+          }
+        }
+        
+        // Notify newly assigned backup POC
+        if (updates.backupPocId && updates.backupPocId !== currentStep.backupPocId) {
+          const backupPoc = await storage.getUser(updates.backupPocId);
+          if (backupPoc?.email) {
+            pocEmails.push(backupPoc.email);
+          }
+        }
+        
+        // Send notification to newly assigned POCs
+        if (pocEmails.length > 0) {
+          console.log(`📧 Sending POC assignment notification to: ${pocEmails.join(', ')}`);
+          await emailService.sendPocReassignmentNotification(pocEmails, updatedStep, assignedBy);
+          console.log(`✅ POC assignment notification sent successfully`);
+        } else {
+          console.log(`ℹ️ No new POC assignments detected for notifications`);
         }
       }
 
@@ -244,8 +391,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/steps/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/steps/:id', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
+      // Check permissions - only release managers can delete steps
+      const user = await storage.getUser(req.user?.id || "");
+      if (!user || user.role !== "release_manager") {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
       await storage.deleteStep(req.params.id);
       
       broadcast({ type: "step_deleted", data: { id: req.params.id } });
@@ -259,13 +412,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Manual step triggering
   app.post('/api/steps/:id/trigger', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
       const user = await storage.getUser(userId);
-      if (!user || (user.role !== "release_manager" && user.role !== "team_lead")) {
+      if (!user || user.role !== "release_manager") {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
 
@@ -281,23 +434,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedStep = await storage.updateStep(req.params.id, {
         status: "started",
         startedAt: new Date(),
-      });
+      } as any);
 
       // Log the manual trigger
       await storage.addStepHistory({
         stepId: req.params.id,
         previousStatus: "not_started",
         newStatus: "started",
-        changedBy: userId,
+        changedBy: user.id,
         notes: "Manually triggered",
       });
 
-      // Send trigger notification
+      // Send trigger notification to team lead and POCs
+      const triggerEmails: string[] = [];
+      
+      if (step.teamLeadId) {
+        const teamLead = await storage.getUser(step.teamLeadId);
+        if (teamLead?.email) triggerEmails.push(teamLead.email);
+      }
+      
       if (step.primaryPocId) {
-        const poc = await storage.getUser(step.primaryPocId);
-        if (poc?.email) {
-          await emailService.sendStepTriggerNotification(poc.email, updatedStep);
-        }
+        const primaryPoc = await storage.getUser(step.primaryPocId);
+        if (primaryPoc?.email) triggerEmails.push(primaryPoc.email);
+      }
+      
+      if (step.backupPocId) {
+        const backupPoc = await storage.getUser(step.backupPocId);
+        if (backupPoc?.email) triggerEmails.push(backupPoc.email);
+      }
+      
+      if (triggerEmails.length > 0) {
+        await emailService.sendStepTriggerNotification(triggerEmails, updatedStep);
+      }
+
+      // Update release plan status based on steps
+      if (updatedStep.releasePlanId) {
+        await updateReleasePlanStatus(updatedStep.releasePlanId);
+        await emailService.checkAndNotifyReleaseCompletion(updatedStep.releasePlanId);
       }
 
       broadcast({ type: "step_triggered", data: updatedStep });
@@ -322,7 +495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Global Settings routes
   app.get('/api/settings', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const user = await storage.getUser(req.user?.claims?.sub || "");
+      const user = await storage.getUser(req.user?.id || "");
       if (!user || user.role !== "release_manager") {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
@@ -337,7 +510,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/settings', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -373,7 +546,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/release-plans/:id/share-links', isAuthenticated, async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }

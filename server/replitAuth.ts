@@ -59,6 +59,7 @@ async function upsertUser(
 ) {
   await storage.upsertUser({
     email: claims["email"],
+    password: "oauth_user", // OAuth users don't have passwords
     firstName: claims["first_name"],
     lastName: claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
@@ -80,7 +81,7 @@ export async function setupAuth(app: Express) {
     const user = {};
     updateUserSession(user, tokens);
     await upsertUser(tokens.claims());
-    verified(null, user);
+    verified(null, user as any);
   };
 
   for (const domain of process.env
@@ -126,7 +127,7 @@ export async function setupAuth(app: Express) {
   });
 }
 
-export const isAuthenticated: RequestHandler = async (req, res, next) => {
+export const isAuthenticated = async (req: any, res: any, next: any) => {
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {
